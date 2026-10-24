@@ -228,6 +228,7 @@ body{
   background:#000;border:1px solid var(--line);
   box-shadow:0 14px 40px -16px rgba(0,0,0,.9);
   aspect-ratio:16/9;
+  max-height:78vh;
 }
 video{width:100%;height:100%;display:block;background:#000;object-fit:contain}
 .video-frame.enter{animation:enter .8s var(--ease)}
@@ -710,6 +711,14 @@ player.addEventListener('canplay', () => {
     const p = player.play();
     if(p && p.catch) p.catch(() => {});
   }
+});
+
+// 根据视频实际宽高自动适配画幅：竖屏视频不再被强制塞进 16:9 的矮框里
+player.addEventListener('loadedmetadata', () => {
+  const w = player.videoWidth, h = player.videoHeight;
+  if(!w || !h) return;
+  const ratio = Math.min(Math.max(w / h, 9 / 16), 21 / 9);
+  $('#videoFrame').style.aspectRatio = ratio.toFixed(4);
 });
 
 /* ============================================================

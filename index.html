@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>专属放映厅 · Private Screening</title>
+<meta name="description" content="一个只为你准备的专属放映厅，输入暗号解锁，放映我们共同的记忆。">
+
+<link rel="preconnect" href="https://miaoda.feishu.cn">
+<link rel="preconnect" href="https://sf3-scmcdn-cn.feishucdn.com" crossorigin>
+<link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@500;600;700&family=Noto+Sans+SC:wght@400;500&display=swap">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23100e0b'/%3E%3Ccircle cx='16' cy='16' r='5.2' fill='none' stroke='%23d8a95f' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='1.6' fill='%23d8a95f'/%3E%3C/svg%3E">
+
+<style>
+/* ============================================================
+   Design tokens — 私人放映厅 · 深夜放映的暖黑调
+   ============================================================ */
+:root{
+  --bg:#100e0b;
+  --bg-2:#16120d;
+  --card:#1c1712;
+  --card-2:#211b14;
+  --line:rgba(216,169,95,.18);
+  --ink:#f2e8d6;
+  --ink-dim:#b3a792;
+  --ink-faint:#7c7363;
+  --amber:#d8a95f;
+  --amber-hi:#eec07f;
+  --amber-soft:rgba(216,169,95,.14);
+  --green:#6fcf82;
+  --danger:#e0715f;
+  --radius:20px;
+  --ease:cubic-bezier(.22,.8,.28,1);
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  min-height:100vh;
+  font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  color:var(--ink);
+  background:var(--bg);
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+
+/* ---- 背景氛围层：噪点 + 暗角 + 微光 ---- */
+.backdrop{position:fixed;inset:0;z-index:0;pointer-events:none}
+.backdrop::before{
+  content:"";position:absolute;inset:0;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(216,169,95,.10), transparent 55%),
+    radial-gradient(140% 120% at 50% 115%, rgba(216,169,95,.05), transparent 60%),
+    linear-gradient(180deg,#14100b 0%, #100e0b 100%);
+}
+.backdrop::after{
+  content:"";position:absolute;inset:0;
+  background:radial-gradient(120% 100% at 50% 50%, transparent 55%, rgba(0,0,0,.55) 100%);
+}
+.grain{position:absolute;inset:-40px;opacity:.055;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.vignette{position:absolute;inset:0}
+
+/* ---- 主容器 ---- */
+.stage{
+  position:relative;z-index:1;
+  min-height:100vh;
+  display:flex;align-items:center;justify-content:center;
+  padding:48px 20px 72px;
+}
+
+/* 顶部装饰放映灯（琥珀光柱） */
+.beam{
+  position:fixed;top:-80px;left:50%;transform:translateX(-50%);
+  width:min(560px,90vw);height:200px;z-index:0;pointer-events:none;
+  background:radial-gradient(50% 100% at 50% 0%, rgba(216,169,95,.16), transparent 70%);
+  filter:blur(2px);
+}
+
+/* ============================================================
+   胶片卡片容器
+   ============================================================ */
+.reel{
+  position:relative;z-index:2;
+  width:100%;max-width:520px;
+  background:linear-gradient(180deg, var(--card-2), var(--card));
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:0 30px 70px -30px rgba(0,0,0,.8);
+  overflow:hidden;
+}
+/* 胶片齿孔 */
+.reel::before,.reel::after{
+  content:"";position:absolute;top:0;bottom:0;width:9px;
+  background:repeating-linear-gradient(to bottom,
+    transparent 0 13px, rgba(216,169,95,.22) 13px 20px);
+  opacity:.5;
+}
+.reel::before{left:10px}
+.reel::after{right:10px}
+
+/* ============================================================
+   密码门模块
+   ============================================================ */
+.gate{
+  padding:46px 26px 40px;
+  text-align:center;
+  transition:opacity .7s var(--ease), transform .7s var(--ease);
+}
+.gate .lock-badge{
+  width:52px;height:52px;margin:0 auto 22px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--amber-soft);border:1px solid var(--line);
+  color:var(--amber);
+}
+.gate .lock-badge svg{width:24px;height:24px}
+.gate h1{
+  font-family:"Noto Serif SC",serif;
+  font-weight:600;font-size:30px;letter-spacing:.16em;
+  margin:0 0 6px;color:var(--ink);
+  text-indent:.16em; /* 平衡字距 */
+}
+.gate .rule{
+  width:56px;height:1px;margin:18px auto 18px;
+  background:linear-gradient(90deg, transparent, var(--amber), transparent);
+}
+.gate .sub{
+  font-family:"Noto Serif SC",serif;
+  font-size:14.5px;line-height:1.9;color:var(--ink-dim);
+  max-width:330px;margin:0 auto;
+}
+.gate .hint{
+  margin-top:8px;font-size:12px;color:var(--ink-faint);
+}
+
+/* 输入行 */
+.field{
+  position:relative;margin:26px auto 0;max-width:340px;
+}
+.field .tag{
+  text-align:left;font-size:12px;letter-spacing:.08em;
+  color:var(--ink-faint);margin-bottom:9px;padding-left:4px;
+}
+.input-wrap{
+  position:relative;display:flex;align-items:center;
+  border:1px solid rgba(216,169,95,.26);
+  border-radius:12px;background:rgba(0,0,0,.28);
+  transition:border-color .25s, box-shadow .25s, background .25s;
+}
+.input-wrap:focus-within{
+  border-color:var(--amber);background:rgba(216,169,95,.05);
+  box-shadow:0 0 0 3px rgba(216,169,95,.12);
+}
+.input-wrap.err{
+  border-color:var(--danger);
+  box-shadow:0 0 0 3px rgba(224,113,95,.14);
+  animation:shake .45s var(--ease);
+}
+.input-wrap input{
+  flex:1;min-width:0;border:0;background:transparent;outline:none;
+  color:var(--ink);font-size:16px;letter-spacing:.14em;
+  padding:15px 10px 15px 16px;font-family:inherit;
+}
+.input-wrap input::placeholder{color:var(--ink-faint);letter-spacing:.02em;font-size:14px}
+.toggle{
+  flex:none;width:48px;height:48px;border:0;background:transparent;cursor:pointer;
+  color:var(--ink-faint);display:flex;align-items:center;justify-content:center;
+  transition:color .2s;
+}
+.toggle:hover{color:var(--ink)}
+.toggle svg{width:20px;height:20px}
+
+.msg{
+  min-height:22px;margin-top:10px;font-size:13px;color:var(--danger);
+  opacity:0;transform:translateY(-2px);transition:opacity .25s, transform .25s;
+}
+.msg.show{opacity:1;transform:none}
+
+.submit{
+  display:block;width:100%;max-width:340px;margin:6px auto 0;
+  padding:15px 18px;border:0;border-radius:12px;cursor:pointer;
+  background:linear-gradient(180deg, var(--amber-hi), var(--amber));
+  color:#1d150a;font-size:16px;font-weight:500;font-family:inherit;
+  letter-spacing:.06em;transition:transform .15s, box-shadow .2s, filter .2s;
+  box-shadow:0 8px 22px -8px rgba(216,169,95,.5);
+}
+.submit:hover{filter:brightness(1.05);box-shadow:0 10px 26px -8px rgba(216,169,95,.6)}
+.submit:active{transform:translateY(1px)}
+.submit:focus-visible{outline:2px solid var(--amber-hi);outline-offset:3px}
+
+/* ============================================================
+   视频放映模块
+   ============================================================ */
+.screen{display:none;padding:0}
+.screen.on{display:block}
+
+.screen .status{
+  display:flex;align-items:center;gap:12px;
+  padding:20px 26px;border-bottom:1px solid var(--line);
+}
+.pulse{
+  position:relative;flex:none;width:11px;height:11px;border-radius:50%;
+  background:var(--green);
+}
+.pulse::before,.pulse::after{
+  content:"";position:absolute;inset:-6px;border-radius:50%;
+  border:1px solid var(--green);opacity:.6;
+  animation:pulse 2s var(--ease) infinite;
+}
+.pulse::after{animation-delay:1s}
+@keyframes pulse{
+  0%{transform:scale(.6);opacity:.7}
+  80%,100%{transform:scale(1.6);opacity:0}
+}
+.screen .status .txt{
+  font-size:14px;color:var(--ink-dim);letter-spacing:.04em;
+}
+.screen .status .txt b{color:var(--ink);font-weight:500}
+
+.video-wrap{
+  position:relative;padding:20px 26px 24px;
+}
+.video-frame{
+  position:relative;border-radius:14px;overflow:hidden;
+  background:#000;border:1px solid var(--line);
+  box-shadow:0 14px 40px -16px rgba(0,0,0,.9);
+  aspect-ratio:16/9;
+}
+video{width:100%;height:100%;display:block;background:#000;object-fit:contain}
+.video-frame.enter{animation:enter .8s var(--ease)}
+@keyframes enter{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+
+.screen .caption{
+  margin:14px 4px 0;font-size:13px;color:var(--ink-faint);text-align:center;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.screen .caption svg{width:13px;height:13px}
+
+/* ============================================================
+   管理入口
+   ============================================================ */
+.admin-float{
+  position:fixed;right:16px;bottom:16px;z-index:20;
+  width:42px;height:42px;border-radius:50%;cursor:pointer;
+  border:1px solid var(--line);background:rgba(28,23,18,.82);
+  color:var(--ink-faint);display:flex;align-items:center;justify-content:center;
+  backdrop-filter:blur(4px);transition:color .2s, border-color .2s, transform .15s;
+}
+.admin-float:hover{color:var(--amber);border-color:var(--amber)}
+.admin-float:active{transform:scale(.94)}
+.admin-float svg{width:18px;height:18px}
+
+/* ============================================================
+   弹层（管理登录 / 管理面板）
+   ============================================================ */
+.modal-back{
+  position:fixed;inset:0;z-index:40;display:none;
+  align-items:center;justify-content:center;padding:20px;
+  background:rgba(8,6,4,.66);backdrop-filter:blur(6px);
+}
+.modal-back.open{display:flex}
+.modal{
+  width:100%;max-width:420px;max-height:88vh;overflow:auto;
+  background:linear-gradient(180deg, var(--card-2), var(--card));
+  border:1px solid var(--line);border-radius:var(--radius);
+  padding:26px 24px;box-shadow:0 30px 70px -30px rgba(0,0,0,.9);
+  animation:pop .4s var(--ease);
+}
+@keyframes pop{from{opacity:0;transform:scale(.95) translateY(8px)}to{opacity:1;transform:none}}
+.modal h2{
+  font-family:"Noto Serif SC",serif;font-weight:600;font-size:19px;
+  letter-spacing:.08em;margin:0 0 4px;color:var(--ink);text-align:center;
+}
+.modal .m-sub{text-align:center;font-size:12.5px;color:var(--ink-faint);margin:0 0 20px}
+.modal .row{position:relative;margin-bottom:14px}
+.modal label{display:block;font-size:12px;color:var(--ink-dim);margin:0 0 6px;padding-left:4px}
+.modal .m-input{
+  width:100%;padding:13px 14px;border-radius:10px;border:1px solid rgba(216,169,95,.26);
+  background:rgba(0,0,0,.28);color:var(--ink);font-size:16px;font-family:inherit;outline:none;
+  transition:border-color .2s, box-shadow .2s;
+}
+.modal .m-input:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(216,169,95,.12)}
+.modal .m-err{min-height:18px;font-size:12.5px;color:var(--danger);margin:2px 4px 0}
+.modal .m-err.show{opacity:1}
+
+.btn{
+  width:100%;padding:13px;border:0;border-radius:11px;cursor:pointer;
+  font-size:15px;font-family:inherit;font-weight:500;letter-spacing:.04em;
+  background:linear-gradient(180deg, var(--amber-hi), var(--amber));color:#1d150a;
+  transition:filter .2s, transform .15s;
+}
+.btn:hover{filter:brightness(1.06)}
+.btn:active{transform:translateY(1px)}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim)}
+.btn.ghost:hover{color:var(--ink);border-color:var(--amber)}
+.btn.danger{background:transparent;border:1px solid rgba(224,113,95,.4);color:var(--danger)}
+.btn.danger:hover{background:rgba(224,113,95,.08)}
+.btn.sm{width:auto;padding:8px 14px;font-size:13px}
+
+.m-close{
+  position:absolute;top:14px;right:14px;width:36px;height:36px;border:0;border-radius:50%;
+  background:transparent;color:var(--ink-faint);cursor:pointer;display:flex;
+  align-items:center;justify-content:center;transition:color .2s, background .2s;
+}
+.m-close:hover{color:var(--ink);background:rgba(216,169,95,.1)}
+.m-close svg{width:16px;height:16px}
+
+/* ---- 管理面板内容 ---- */
+.upload-zone{
+  border:1.5px dashed rgba(216,169,95,.4);border-radius:12px;
+  padding:22px 16px;text-align:center;color:var(--ink-dim);font-size:13px;
+  cursor:pointer;transition:border-color .2s, background .2s;margin-bottom:18px;
+}
+.upload-zone:hover{border-color:var(--amber);background:var(--amber-soft)}
+.upload-zone svg{width:22px;height:22px;color:var(--amber);margin-bottom:6px}
+.upload-zone input{display:none}
+
+.vlist-title{
+  display:flex;align-items:center;justify-content:space-between;
+  font-size:12.5px;color:var(--ink-faint);margin:0 0 8px;
+}
+.vlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.vlist li{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:rgba(0,0,0,.18);
+}
+.vlist .thumb{
+  flex:none;width:52px;height:34px;border-radius:6px;overflow:hidden;background:#000;
+  border:1px solid rgba(216,169,95,.2);display:flex;align-items:center;justify-content:center;
+  color:var(--ink-faint);
+}
+.vlist .thumb svg{width:14px;height:14px}
+.vlist .meta{flex:1;min-width:0}
+.vlist .name{font-size:13px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vlist .info{font-size:11px;color:var(--ink-faint)}
+.vlist .ops{display:flex;gap:6px}
+.pill{
+  font-size:10.5px;padding:2px 7px;border-radius:20px;border:1px solid var(--green);
+  color:var(--green);white-space:nowrap;
+}
+.empty{text-align:center;color:var(--ink-faint);font-size:13px;padding:18px 0 6px}
+
+/* ---- 通用提示 toast ---- */
+.toast{
+  position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(16px);
+  z-index:60;padding:11px 20px;border-radius:30px;font-size:13.5px;
+  background:rgba(28,23,18,.96);border:1px solid var(--line);color:var(--ink);
+  opacity:0;pointer-events:none;transition:opacity .3s, transform .3s;box-shadow:0 10px 30px -10px rgba(0,0,0,.7);
+  max-width:calc(100vw - 40px);text-align:center;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.warn{color:var(--danger);border-color:rgba(224,113,95,.4)}
+
+/* ============================================================
+   动效 & 无障碍
+   ============================================================ */
+@keyframes shake{
+  0%,100%{transform:translateX(0)}
+  20%{transform:translateX(-8px)}
+  40%{transform:translateX(8px)}
+  60%{transform:translateX(-5px)}
+  80%{transform:translateX(4px)}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important;transition:none !important}
+}
+
+/* ---- 响应式：窄屏优先（默认即窄屏），桌面在 768 之上 ---- */
+@media (min-width:768px){
+  .stage{padding:56px 24px 80px}
+  .gate{padding:54px 46px 46px}
+  .gate h1{font-size:34px}
+  .gate .sub{font-size:15px}
+  .screen .video-wrap{padding:24px 34px 30px}
+  .admin-float{right:22px;bottom:22px}
+}
+</style>
+</head>
+<body>
+
+<div class="backdrop" aria-hidden="true">
+  <div class="grain"></div>
+  <div class="vignette"></div>
+</div>
+<div class="beam" aria-hidden="true"></div>
+
+<main class="stage">
+
+  <!-- ===== 胶片卡片 ===== -->
+  <div class="reel" id="reel">
+
+    <!-- 密码门模块 -->
+    <section class="gate" id="gate" aria-label="暗号入口">
+      <div class="lock-badge" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/><circle cx="12" cy="15.5" r="1.4" fill="currentColor" stroke="none"/></svg>
+      </div>
+      <h1>专属放映厅</h1>
+      <div class="rule" aria-hidden="true"></div>
+      <p class="sub">我无意发现，当初随手记录的东西我居然保存了很久很久。</p>
+
+      <form class="field" id="gateForm" novalidate>
+        <div class="tag">输入暗号</div>
+        <div class="input-wrap" id="inputWrap">
+          <input id="code" type="password" inputmode="text" autocomplete="off"
+                 placeholder="请输入暗号" aria-label="暗号" autofocus>
+          <button type="button" class="toggle" id="toggleBtn" aria-label="切换明文密文" title="显示 / 隐藏暗号">
+            <!-- 眼睛图标由 JS 切换 -->
+            <span id="eyeOpen" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.6"/></svg>
+            </span>
+            <span id="eyeClosed">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3.3 4.1M6.6 6.6A16.5 16.5 0 0 0 2 12s3.5 7 10 7a10 10 0 0 0 3.4-.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+            </span>
+          </button>
+        </div>
+        <p class="msg" id="msg" role="status"></p>
+        <button type="submit" class="submit" id="enterBtn">进入放映 →</button>
+      </form>
+    </section>
+
+    <!-- 视频放映模块 -->
+    <section class="screen" id="screen" aria-label="放映区" hidden>
+      <div class="status">
+        <span class="pulse" aria-hidden="true"></span>
+        <span class="txt">暗号正确，正在为你<b>放映</b></span>
+      </div>
+      <div class="video-wrap">
+        <div class="video-frame" id="videoFrame">
+          <video id="player" controls playsinline preload="metadata"></video>
+        </div>
+        <p class="caption">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7v1a4 4 0 0 0-1 8v0a4 4 0 0 0 1 3.4"/><path d="M20 21a4 4 0 0 0 1-3.4v0a4 4 0 0 0-1-8V9a7 7 0 0 0-7-7v0c2.2 0 4 1.8 4 4"/><path d="M13 11h3"/><path d="M8 11h.01"/></svg>
+          仅此一场 · 请用心看
+        </p>
+      </div>
+    </section>
+  </div>
+</main>
+
+<!-- 管理入口 -->
+<button class="admin-float" id="adminFloat" aria-label="管理放映厅" title="管理">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/></svg>
+</button>
+
+<!-- ===== 管理登录弹层 ===== -->
+<div class="modal-back" id="loginBack">
+  <div class="modal">
+    <button class="m-close" id="loginClose" aria-label="关闭">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <h2>管理放映厅</h2>
+    <p class="m-sub">输入管理员账号与密码</p>
+    <div class="row">
+      <label for="adUser">账号</label>
+      <input class="m-input" id="adUser" type="text" autocomplete="off">
+    </div>
+    <div class="row">
+      <label for="adPass">密码</label>
+      <input class="m-input" id="adPass" type="password" autocomplete="off">
+    </div>
+    <p class="m-err" id="loginErr"></p>
+    <button class="btn" id="loginBtn">登 录</button>
+  </div>
+</div>
+
+<!-- ===== 管理面板弹层 ===== -->
+<div class="modal-back" id="panelBack">
+  <div class="modal">
+    <button class="m-close" id="panelClose" aria-label="关闭">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <h2>放映管理</h2>
+    <p class="m-sub">上传或删除放映内容</p>
+
+    <div class="upload-zone" id="uploadZone" role="button" tabindex="0" aria-label="点击上传视频">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V5"/><path d="M7 10l5-5 5 5"/><path d="M4 19h16"/></svg>
+      <div>点击选择视频文件上传</div>
+      <input type="file" id="fileInput" accept="video/*">
+    </div>
+
+    <div class="vlist-title"><span>已上传视频</span></div>
+    <ul class="vlist" id="vlist"></ul>
+    <div class="empty" id="vEmpty">暂无上传视频</div>
+
+    <div style="margin-top:18px">
+      <button class="btn ghost sm" id="logoutBtn">退出管理</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* ============================================================
+   配置区（可按需修改）
+   ============================================================ */
+const CONFIG = {
+  // 解锁暗号
+  PASSWORD: 'z8q19t3y15',
+  // 管理员账号 / 密码
+  ADMIN_USER: 'wwblnznxf',
+  ADMIN_PASS: '19315078',
+  // 默认放映视频（未上传或未指定时的预设视频）
+  DEFAULT_VIDEO: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+  // 视频存储索引
+  DB_NAME: 'private-screening-db',
+  STORE: 'videos'
+};
+
+/* ============================================================
+   工具
+   ============================================================ */
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let toastTimer = null;
+function toast(text, isWarn){
+  const t = $('#toast');
+  t.textContent = text;
+  t.classList.toggle('warn', !!isWarn);
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+/* ============================================================
+   IndexedDB — 持久化上传的视频
+   ============================================================ */
+let db = null;
+function openDB(){
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(CONFIG.DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if(!d.objectStoreNames.contains(CONFIG.STORE)){
+        const store = d.createObjectStore(CONFIG.STORE, { keyPath: 'id' });
+        store.createIndex('created', 'created', { unique: false });
+      }
+    };
+    req.onsuccess = () => { db = req.result; resolve(db); };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idbPut(record){
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(CONFIG.STORE, 'readwrite');
+    tx.objectStore(CONFIG.STORE).put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+function idbGetAll(){
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(CONFIG.STORE, 'readonly');
+    const req = tx.objectStore(CONFIG.STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbDelete(id){
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(CONFIG.STORE, 'readwrite');
+    tx.objectStore(CONFIG.STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/* ============================================================
+   放映状态
+   ============================================================ */
+const state = {
+  unlocked: false,
+  videos: [],          // [{id, name, size, created}]
+  currentId: null,     // 当前放映的视频 id（null = 用默认视频）
+  pendingPlay: true    // 解锁后是否尝试自动播放
+};
+
+// 对象 URL 缓存：id -> blobUrl
+const urlCache = {};
+
+/* ============================================================
+   密码门逻辑
+   ============================================================ */
+const gate = $('#gate');
+const screen = $('#screen');
+const reel = $('#reel');
+const input = $('#code');
+const inputWrap = $('#inputWrap');
+const msg = $('#msg');
+const eyeOpen = $('#eyeOpen');
+const eyeClosed = $('#eyeClosed');
+const toggleBtn = $('#toggleBtn');
+
+// 桌面端自动聚焦；移动端避免弹出键盘
+if(window.matchMedia('(hover: hover) and (pointer: fine)').matches){
+  input.focus();
+}
+
+// 明文 / 密文切换
+toggleBtn.addEventListener('click', () => {
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  eyeOpen.hidden = !show;
+  eyeClosed.hidden = show;
+  input.focus();
+});
+
+// 输入时清除错误
+input.addEventListener('input', () => {
+  msg.classList.remove('show');
+  inputWrap.classList.remove('err');
+});
+
+function failMessage(text){
+  msg.textContent = text;
+  msg.classList.add('show');
+  // 抖动动效
+  inputWrap.classList.remove('err');
+  // 强制重排以重新触发动画
+  void inputWrap.offsetWidth;
+  inputWrap.classList.add('err');
+}
+
+$('#gateForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const val = input.value;
+  if(!val.trim()){
+    failMessage('暗号还没填呢～');
+    return;
+  }
+  if(val === CONFIG.PASSWORD){
+    unlock();
+  } else {
+    failMessage('暗号不对，再想想～');
+  }
+});
+
+/* ============================================================
+   解锁 & 切换放映
+   ============================================================ */
+function unlock(){
+  state.unlocked = true;
+  gate.style.pointerEvents = 'none';
+
+  if(prefersReduced){
+    gate.hidden = true;
+    enterScreen();
+    return;
+  }
+  // 密码门淡出 → 卡片展开 → 放映入场
+  gate.style.opacity = '0';
+  gate.style.transform = 'scale(.98)';
+  reel.style.maxWidth = '760px';
+  reel.style.transition = 'max-width .9s cubic-bezier(.22,.8,.28,1)';
+
+  setTimeout(() => { gate.hidden = true; enterScreen(); }, 620);
+}
+
+function enterScreen(){
+  screen.hidden = false;
+  screen.classList.add('on');
+  // 延迟一帧后入场，保证 display 已切换
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const frame = $('#videoFrame');
+      frame.classList.remove('enter');
+      void frame.offsetWidth;
+      frame.classList.add('enter');
+      loadCurrentVideo(true);
+    });
+  });
+}
+
+/* ============================================================
+   视频加载与播放
+   ============================================================ */
+const player = $('#player');
+
+function getCurrentSrc(){
+  if(state.currentId){
+    const rec = state.videos.find(v => v.id === state.currentId);
+    if(rec) return urlCache[rec.id] || null;
+  }
+  return CONFIG.DEFAULT_VIDEO;
+}
+
+function loadCurrentVideo(autoplay){
+  const src = getCurrentSrc();
+  if(!src){
+    toast('当前视频已失效，已回退到预设视频', true);
+    state.currentId = null;
+    player.src = CONFIG.DEFAULT_VIDEO;
+  } else {
+    player.src = src;
+  }
+  player.load();
+  if(autoplay){
+    // 浏览器策略可能拦截自动播放，失败则保持就绪，等待用户手动点击
+    const p = player.play();
+    if(p && p.catch) p.catch(() => {/* 保留就绪状态 */});
+  }
+}
+
+// 播放器就绪
+player.addEventListener('canplay', () => {
+  if(state.pendingPlay){
+    state.pendingPlay = false;
+    const p = player.play();
+    if(p && p.catch) p.catch(() => {});
+  }
+});
+
+/* ============================================================
+   管理端：登录 / 面板
+   ============================================================ */
+const loginBack = $('#loginBack');
+const panelBack = $('#panelBack');
+const adUser = $('#adUser');
+const adPass = $('#adPass');
+const loginErr = $('#loginErr');
+
+$('#adminFloat').addEventListener('click', () => {
+  openLogin();
+});
+$('#loginClose').addEventListener('click', closeLogin);
+$('#panelClose').addEventListener('click', closePanel);
+loginBack.addEventListener('click', (e) => { if(e.target === loginBack) closeLogin(); });
+panelBack.addEventListener('click', (e) => { if(e.target === panelBack) closePanel(); });
+
+function openLogin(){
+  loginErr.classList.remove('show');
+  loginErr.textContent = '';
+  adUser.value = '';
+  adPass.value = '';
+  loginBack.classList.add('open');
+  setTimeout(() => adUser.focus(), 60);
+}
+function closeLogin(){ loginBack.classList.remove('open'); }
+
+function openPanel(){
+  panelBack.classList.add('open');
+  renderList();
+}
+function closePanel(){ panelBack.classList.remove('open'); }
+
+$('#loginBtn').addEventListener('click', () => {
+  if(adUser.value === CONFIG.ADMIN_USER && adPass.value === CONFIG.ADMIN_PASS){
+    closeLogin();
+    openPanel();
+    toast('登录成功');
+  } else {
+    loginErr.textContent = '账号或密码错误';
+    loginErr.classList.add('show');
+  }
+});
+
+// Enter 提交登录
+[adUser, adPass].forEach(el => el.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter') $('#loginBtn').click();
+}));
+
+$('#logoutBtn').addEventListener('click', () => {
+  closePanel();
+  toast('已退出管理');
+});
+
+/* ---- 上传 ---- */
+const fileInput = $('#fileInput');
+const uploadZone = $('#uploadZone');
+
+function pickFile(){ fileInput.click(); }
+uploadZone.addEventListener('click', pickFile);
+uploadZone.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickFile(); }
+});
+
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files && fileInput.files[0];
+  fileInput.value = '';
+  if(!file) return;
+  if(!file.type.startsWith('video/')){
+    toast('请选择视频文件', true);
+    return;
+  }
+  try{
+    await openDB();
+    const id = 'vid_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const record = { id, name: file.name, size: file.size, created: Date.now(), blob: file };
+    await idbPut(record);
+    urlCache[id] = URL.createObjectURL(file);
+    await refreshList();
+    // 若无当前放映，自动设为第一个上传的视频
+    if(!state.currentId){
+      state.currentId = id;
+      await refreshList();
+      if(state.unlocked && screen.classList.contains('on')){
+        loadCurrentVideo(true);
+      }
+    }
+    toast('已上传：' + file.name);
+  }catch(err){
+    console.error(err);
+    toast('上传失败', true);
+  }
+});
+
+/* ---- 列表渲染 ---- */
+async function refreshList(){
+  await openDB();
+  const all = await idbGetAll();
+  // 保证 urlCache 有 blob URL
+  all.forEach(rec => {
+    if(rec.blob && !urlCache[rec.id]) urlCache[rec.id] = URL.createObjectURL(rec.blob);
+  });
+  state.videos = all
+    .filter(rec => !!rec.blob)
+    .map(({ id, name, size, created }) => ({ id, name, size, created }))
+    .sort((a, b) => b.created - a.created);
+  renderList();
+}
+
+function fmtSize(bytes){
+  if(bytes < 1024) return bytes + ' B';
+  if(bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1048576).toFixed(1) + ' MB';
+}
+function fmtDate(ts){
+  const d = new Date(ts);
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+function renderList(){
+  const list = $('#vlist');
+  const empty = $('#vEmpty');
+  list.innerHTML = '';
+  if(!state.videos.length){
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  state.videos.forEach(rec => {
+    const li = document.createElement('li');
+    li.className = 'item';
+    const isCurrent = state.currentId === rec.id;
+    const nameEl = document.createElement('span');
+    nameEl.className = 'name';
+    nameEl.textContent = rec.name;
+    const infoEl = document.createElement('span');
+    infoEl.className = 'info';
+    infoEl.textContent = fmtSize(rec.size) + ' · ' + fmtDate(rec.created);
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.append(nameEl, infoEl);
+    if(isCurrent){
+      const pill = document.createElement('span');
+      pill.className = 'pill';
+      pill.textContent = '当前放映';
+      meta.appendChild(pill);
+    }
+
+    const thumb = document.createElement('div');
+    thumb.className = 'thumb';
+    thumb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5.5v13l10-6.5-10-6.5Z"/></svg>';
+
+    const ops = document.createElement('div');
+    ops.className = 'ops';
+    if(!isCurrent){
+      const setBtn = document.createElement('button');
+      setBtn.className = 'btn ghost sm';
+      setBtn.textContent = '设为放映';
+      setBtn.addEventListener('click', async () => {
+        state.currentId = rec.id;
+        await refreshList();
+        if(state.unlocked && screen.classList.contains('on')) loadCurrentVideo(true);
+        toast('已切换放映视频');
+      });
+      ops.appendChild(setBtn);
+    }
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn danger sm';
+    delBtn.textContent = '删除';
+    delBtn.addEventListener('click', async () => {
+      const ok = confirm('确定删除「' + rec.name + '」？');
+      if(!ok) return;
+      try{
+        await idbDelete(rec.id);
+        if(urlCache[rec.id]){ URL.revokeObjectURL(urlCache[rec.id]); delete urlCache[rec.id]; }
+        if(state.currentId === rec.id) state.currentId = null;
+        await refreshList();
+        if(state.unlocked && screen.classList.contains('on')) loadCurrentVideo(true);
+        toast('已删除');
+      }catch(err){
+        console.error(err);
+        toast('删除失败', true);
+      }
+    });
+    ops.appendChild(delBtn);
+
+    li.append(thumb, meta, ops);
+    list.appendChild(li);
+  });
+}
+
+/* ============================================================
+   初始化
+   ============================================================ */
+(async function init(){
+  try{
+    await openDB();
+    await refreshList();
+    // 恢复上次设置的当前放映（若已删除则回退默认）
+    const saved = localStorage.getItem('ps_current');
+    if(saved && state.videos.some(v => v.id === saved)) state.currentId = saved;
+  }catch(err){
+    console.warn('IndexedDB 不可用，仅使用预设视频', err);
+  }
+  // 仅在已解锁状态下加载视频源
+  if(state.unlocked && screen.classList.contains('on')) loadCurrentVideo(false);
+})();
+
+// 保存当前放映选择
+window.addEventListener('beforeunload', () => {
+  if(state.currentId) localStorage.setItem('ps_current', state.currentId);
+});
+</script>
+</body>
+</html>

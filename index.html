@@ -542,6 +542,32 @@ function displayName(name){
   return i >= 0 ? name.slice(i + 2) : name;
 }
 
+// 云端保存「当前放映」的状态文件（与视频放在同一桶，跨设备一致）
+const STATE_KEY = '_current.json';
+
+async function loadCurrentFromCloud(){
+  try{
+    const url = sb.storage.from(CONFIG.BUCKET).getPublicUrl(STATE_KEY).data.publicUrl;
+    const res = await fetch(url + '?t=' + Date.now(), { cache: 'no-store' });
+    if(!res.ok) return null;
+    const j = await res.json();
+    return j && j.current ? j.current : null;
+  }catch(e){ return null; }
+}
+
+async function saveCurrentToCloud(id){
+  try{
+    const payload = JSON.stringify({ current: id || null });
+    const blob = new Blob([payload], { type: 'application/json' });
+    const { error } = await sb.storage.from(CONFIG.BUCKET).upload(STATE_KEY, blob, {
+      contentType: 'application/json',
+      upsert: true,
+      cacheControl: 'max-age=0'
+    });
+    if(error) console.warn('saveCurrentToCloud:', error);
+  }catch(e){ console.warn('saveCurrentToCloud:', e); }
+}
+
 /* ============================================================
    放映状态
    ============================================================ */
@@ -777,6 +803,7 @@ fileInput.addEventListener('change', async () => {
     // 若无当前放映，自动设为第一个上传的视频
     if(!state.currentId){
       state.currentId = id;
+      await saveCurrentToCloud(id);
       await refreshList();
       if(state.unlocked && screen.classList.contains('on')){
         loadCurrentVideo(true);
@@ -794,7 +821,7 @@ async function refreshList(){
   const { data, error } = await sb.storage.from(CONFIG.BUCKET).list();
   if(error) throw error;
   state.videos = (data || [])
-    .filter(o => !!o.id && !!o.metadata) // 排除文件夹等非文件项
+    .filter(o => o.name !== STATE_KEY && !!o.id && !!o.metadata) // 排除文件夹与状态文件
     .map(o => ({
       id: o.name,
       name: displayName(o.name),
@@ -858,6 +885,7 @@ function renderList(){
       setBtn.textContent = '设为放映';
       setBtn.addEventListener('click', async () => {
         state.currentId = rec.id;
+        await saveCurrentToCloud(rec.id);
         await refreshList();
         if(state.unlocked && screen.classList.contains('on')) loadCurrentVideo(true);
         toast('已切换放映视频');
@@ -873,7 +901,10 @@ function renderList(){
       try{
         const { error } = await sb.storage.from(CONFIG.BUCKET).remove([rec.id]);
         if(error) throw error;
-        if(state.currentId === rec.id) state.currentId = null;
+        if(state.currentId === rec.id){
+          state.currentId = null;
+          await saveCurrentToCloud(null);
+        }
         await refreshList();
         if(state.unlocked && screen.classList.contains('on')) loadCurrentVideo(true);
         toast('已删除');
@@ -895,8 +926,16 @@ function renderList(){
 (async function init(){
   try{
     await refreshList();
-    // 恢复上次设置的当前放映（若已删除则回退默认）
-    const saved = localStorage.getItem('ps_current');
+    // 从云端恢复「当前放映」（所有设备一致）
+    let saved = await loadCurrentFromCloud();
+    if(!saved){
+      // 兼容旧版本：把本机 localStorage 里存的当前放映迁移到云端
+      const local = localStorage.getItem('ps_current');
+      if(local && state.videos.some(v => v.id === local)){
+        saved = local;
+        saveCurrentToCloud(local);
+      }
+    }
     if(saved && state.videos.some(v => v.id === saved)) state.currentId = saved;
   }catch(err){
     console.warn('云端视频列表加载失败，仅使用预设视频', err);
@@ -905,10 +944,7 @@ function renderList(){
   if(state.unlocked && screen.classList.contains('on')) loadCurrentVideo(false);
 })();
 
-// 保存当前放映选择
-window.addEventListener('beforeunload', () => {
-  if(state.currentId) localStorage.setItem('ps_current', state.currentId);
-});
+// 当前放映已存云端（见 saveCurrentToCloud），无需本地保存
 </script>
 </body>
 </html>

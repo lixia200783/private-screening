@@ -493,6 +493,7 @@ video{width:100%;height:100%;display:block;background:#000;object-fit:contain}
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 <script>
 /* ============================================================
    配置区（可按需修改）
@@ -500,14 +501,12 @@ video{width:100%;height:100%;display:block;background:#000;object-fit:contain}
 const CONFIG = {
   // 解锁暗号
   PASSWORD: 'z8q19t3y15',
-  // 管理员账号 / 密码
-  ADMIN_USER: 'wwblnznxf',
-  ADMIN_PASS: '19315078',
   // 默认放映视频（未上传或未指定时的预设视频）
   DEFAULT_VIDEO: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-  // 视频存储索引
-  DB_NAME: 'private-screening-db',
-  STORE: 'videos'
+  // Supabase 云端存储
+  SUPABASE_URL: 'https://ykkuwdawsqgyhrilqfma.supabase.co',
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlra3V3ZGF3c3FneWhyaWxxZm1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4NDkwOTMsImV4cCI6MjEwODQyNTA5M30.s-FGBB6B8KEjg8wezXAqqV9ECm7wIjo2A3GI3JDVhFw',
+  BUCKET: 'videos'
 };
 
 /* ============================================================
@@ -528,47 +527,19 @@ function toast(text, isWarn){
 }
 
 /* ============================================================
-   IndexedDB — 持久化上传的视频
+   Supabase — 云端存储视频
    ============================================================ */
-let db = null;
-function openDB(){
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(CONFIG.DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      const d = req.result;
-      if(!d.objectStoreNames.contains(CONFIG.STORE)){
-        const store = d.createObjectStore(CONFIG.STORE, { keyPath: 'id' });
-        store.createIndex('created', 'created', { unique: false });
-      }
-    };
-    req.onsuccess = () => { db = req.result; resolve(db); };
-    req.onerror = () => reject(req.error);
-  });
-}
+const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 
-function idbPut(record){
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(CONFIG.STORE, 'readwrite');
-    tx.objectStore(CONFIG.STORE).put(record);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+// 云端对象名：唯一前缀 + '__' + 原始文件名
+function makeKey(fileName){
+  const prefix = 'vid_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  return prefix + '__' + fileName;
 }
-function idbGetAll(){
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(CONFIG.STORE, 'readonly');
-    const req = tx.objectStore(CONFIG.STORE).getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
-}
-function idbDelete(id){
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(CONFIG.STORE, 'readwrite');
-    tx.objectStore(CONFIG.STORE).delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+// 从对象名还原显示用的文件名
+function displayName(name){
+  const i = name.indexOf('__');
+  return i >= 0 ? name.slice(i + 2) : name;
 }
 
 /* ============================================================
@@ -581,8 +552,7 @@ const state = {
   pendingPlay: true    // 解锁后是否尝试自动播放
 };
 
-// 对象 URL 缓存：id -> blobUrl
-const urlCache = {};
+
 
 /* ============================================================
    密码门逻辑
@@ -685,7 +655,7 @@ const player = $('#player');
 function getCurrentSrc(){
   if(state.currentId){
     const rec = state.videos.find(v => v.id === state.currentId);
-    if(rec) return urlCache[rec.id] || null;
+    if(rec) return sb.storage.from(CONFIG.BUCKET).getPublicUrl(rec.id).data.publicUrl;
   }
   return CONFIG.DEFAULT_VIDEO;
 }
@@ -749,13 +719,23 @@ function openPanel(){
 }
 function closePanel(){ panelBack.classList.remove('open'); }
 
-$('#loginBtn').addEventListener('click', () => {
-  if(adUser.value === CONFIG.ADMIN_USER && adPass.value === CONFIG.ADMIN_PASS){
+$('#loginBtn').addEventListener('click', async () => {
+  const email = adUser.value.trim();
+  const password = adPass.value;
+  if(!email || !password){
+    loginErr.textContent = '请输入邮箱和密码';
+    loginErr.classList.add('show');
+    return;
+  }
+  try{
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if(error) throw error;
     closeLogin();
     openPanel();
     toast('登录成功');
-  } else {
-    loginErr.textContent = '账号或密码错误';
+  }catch(err){
+    console.error(err);
+    loginErr.textContent = '登录失败，请检查邮箱和密码';
     loginErr.classList.add('show');
   }
 });
@@ -765,7 +745,8 @@ $('#loginBtn').addEventListener('click', () => {
   if(e.key === 'Enter') $('#loginBtn').click();
 }));
 
-$('#logoutBtn').addEventListener('click', () => {
+$('#logoutBtn').addEventListener('click', async () => {
+  await sb.auth.signOut();
   closePanel();
   toast('已退出管理');
 });
@@ -789,11 +770,9 @@ fileInput.addEventListener('change', async () => {
     return;
   }
   try{
-    await openDB();
-    const id = 'vid_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-    const record = { id, name: file.name, size: file.size, created: Date.now(), blob: file };
-    await idbPut(record);
-    urlCache[id] = URL.createObjectURL(file);
+    const id = makeKey(file.name);
+    const { error } = await sb.storage.from(CONFIG.BUCKET).upload(id, file, { contentType: file.type, upsert: false });
+    if(error) throw error;
     await refreshList();
     // 若无当前放映，自动设为第一个上传的视频
     if(!state.currentId){
@@ -806,21 +785,22 @@ fileInput.addEventListener('change', async () => {
     toast('已上传：' + file.name);
   }catch(err){
     console.error(err);
-    toast('上传失败', true);
+    toast('上传失败：' + (err && err.message ? err.message : ''), true);
   }
 });
 
 /* ---- 列表渲染 ---- */
 async function refreshList(){
-  await openDB();
-  const all = await idbGetAll();
-  // 保证 urlCache 有 blob URL
-  all.forEach(rec => {
-    if(rec.blob && !urlCache[rec.id]) urlCache[rec.id] = URL.createObjectURL(rec.blob);
-  });
-  state.videos = all
-    .filter(rec => !!rec.blob)
-    .map(({ id, name, size, created }) => ({ id, name, size, created }))
+  const { data, error } = await sb.storage.from(CONFIG.BUCKET).list();
+  if(error) throw error;
+  state.videos = (data || [])
+    .filter(o => !!o.id && !!o.metadata) // 排除文件夹等非文件项
+    .map(o => ({
+      id: o.name,
+      name: displayName(o.name),
+      size: (o.metadata && o.metadata.size) || 0,
+      created: o.created_at ? new Date(o.created_at).getTime() : 0
+    }))
     .sort((a, b) => b.created - a.created);
   renderList();
 }
@@ -891,8 +871,8 @@ function renderList(){
       const ok = confirm('确定删除「' + rec.name + '」？');
       if(!ok) return;
       try{
-        await idbDelete(rec.id);
-        if(urlCache[rec.id]){ URL.revokeObjectURL(urlCache[rec.id]); delete urlCache[rec.id]; }
+        const { error } = await sb.storage.from(CONFIG.BUCKET).remove([rec.id]);
+        if(error) throw error;
         if(state.currentId === rec.id) state.currentId = null;
         await refreshList();
         if(state.unlocked && screen.classList.contains('on')) loadCurrentVideo(true);
@@ -914,13 +894,12 @@ function renderList(){
    ============================================================ */
 (async function init(){
   try{
-    await openDB();
     await refreshList();
     // 恢复上次设置的当前放映（若已删除则回退默认）
     const saved = localStorage.getItem('ps_current');
     if(saved && state.videos.some(v => v.id === saved)) state.currentId = saved;
   }catch(err){
-    console.warn('IndexedDB 不可用，仅使用预设视频', err);
+    console.warn('云端视频列表加载失败，仅使用预设视频', err);
   }
   // 仅在已解锁状态下加载视频源
   if(state.unlocked && screen.classList.contains('on')) loadCurrentVideo(false);

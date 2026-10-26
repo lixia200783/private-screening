@@ -549,7 +549,7 @@ const STATE_KEY = '_current.json';
 async function loadCurrentFromCloud(){
   try{
     const url = sb.storage.from(CONFIG.BUCKET).getPublicUrl(STATE_KEY).data.publicUrl;
-    const res = await fetch(url + '?t=' + Date.now(), { cache: 'no-store' });
+    const res = await fetch(url + '?t=' + Date.now() + '_' + Math.random().toString(36).slice(2), { cache: 'no-store' });
     if(!res.ok) return null;
     const j = await res.json();
     return j && j.current ? j.current : null;
@@ -560,10 +560,13 @@ async function saveCurrentToCloud(id){
   try{
     const payload = JSON.stringify({ current: id || null });
     const blob = new Blob([payload], { type: 'application/json' });
+    // bucket 只开放 INSERT/DELETE（upsert 需要 UPDATE 权限会 403）。
+    // 因此采用「先删后插」来覆盖旧的 _current.json。
+    await sb.storage.from(CONFIG.BUCKET).remove([STATE_KEY]);
     const { error } = await sb.storage.from(CONFIG.BUCKET).upload(STATE_KEY, blob, {
       contentType: 'application/json',
-      upsert: true,
-      cacheControl: 'max-age=0'
+      upsert: false,
+      cacheControl: '0'
     });
     if(error) console.warn('saveCurrentToCloud:', error);
   }catch(e){ console.warn('saveCurrentToCloud:', e); }
@@ -683,6 +686,10 @@ function getCurrentSrc(){
   if(state.currentId){
     const rec = state.videos.find(v => v.id === state.currentId);
     if(rec) return sb.storage.from(CONFIG.BUCKET).getPublicUrl(rec.id).data.publicUrl;
+  }
+  // 未指定当前放映时，优先播放最近上传的视频（避免落到国内无法访问的预设外链导致黑屏）
+  if(state.videos.length){
+    return sb.storage.from(CONFIG.BUCKET).getPublicUrl(state.videos[0].id).data.publicUrl;
   }
   return CONFIG.DEFAULT_VIDEO;
 }
@@ -808,15 +815,12 @@ fileInput.addEventListener('change', async () => {
     const id = makeKey(file.name);
     const { error } = await sb.storage.from(CONFIG.BUCKET).upload(id, file, { contentType: file.type, upsert: false });
     if(error) throw error;
+    // 每次上传后都自动把新视频设为当前放映，并同步到云端（跨设备一致）
+    state.currentId = id;
+    await saveCurrentToCloud(id);
     await refreshList();
-    // 若无当前放映，自动设为第一个上传的视频
-    if(!state.currentId){
-      state.currentId = id;
-      await saveCurrentToCloud(id);
-      await refreshList();
-      if(state.unlocked && screen.classList.contains('on')){
-        loadCurrentVideo(true);
-      }
+    if(state.unlocked && screen.classList.contains('on')){
+      loadCurrentVideo(true);
     }
     toast('已上传：' + file.name);
   }catch(err){
